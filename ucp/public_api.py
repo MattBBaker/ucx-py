@@ -86,6 +86,15 @@ def get_ucp_worker():
     """
     return _get_ctx().get_ucp_worker()
 
+def get_worker_address():
+    """
+    Returns an object that wraps ucp_address_t. This structure has all
+    the addresses for all the hardware that UCX was able to find on
+    the local machine. This maybe passed to ep_create() to allow the
+    underlaying UCX library to decide on the best interface to connect with
+    """
+
+    return _get_ctx().get_worker_address()
 
 def get_config():
     """Returns the configuraion as a dict"""

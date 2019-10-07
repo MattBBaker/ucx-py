@@ -313,6 +313,8 @@ cdef class ApplicationContext:
     def get_config(self):
         return self.config
 
+    def get_worker_address(self):
+        return WorkerAddress(PyLong_FromVoidPtr(<void*>self.worker))
 
 class Endpoint:
     """An endpoint represents a connection to a peer
@@ -494,3 +496,18 @@ class Endpoint:
     def cuda_support(self):
         """Return whether UCX is configured with CUDA support or not"""
         return self._cuda_support
+
+cdef class WorkerAddress:
+    cdef ucp_worker_h worker
+    cdef ucp_address_t *address
+    cdef size_t size
+
+    def __init__(self, worker):
+        cdef ucs_status_t status
+        self.worker = <ucp_worker_h>PyLong_AsVoidPtr(worker)
+        status = ucp_worker_get_address(self.worker, &self.address, &self.size)
+        assert_ucs_status(status)
+        
+    def __dealloc__(self):
+        if NULL != <void *>self.address:
+            ucp_worker_release_address(self.worker, self.address)

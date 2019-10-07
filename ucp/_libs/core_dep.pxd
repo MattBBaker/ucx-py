@@ -168,6 +168,15 @@ cdef extern from "ucp/api/ucp.h":
                           const char *title,
                           ucs_config_print_flags_t print_flags)
 
+    ctypedef struct ucp_address_t:
+        pass
+
+    ucs_status_t ucp_worker_get_address(ucp_worker_h worker,
+                                        ucp_address_t **address_p,
+                                        size_t *address_length_p);
+
+    void ucp_worker_release_address(ucp_worker_h worker, ucp_address_t *address);
+
 cdef extern from "sys/epoll.h":
 
     cdef enum:
