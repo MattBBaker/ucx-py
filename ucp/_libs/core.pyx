@@ -288,6 +288,44 @@ cdef class ApplicationContext:
     def get_config(self):
         return self.config
 
+    def mem_alloc(self, size):
+        cdef ucs_status_t status
+        cdef ucp_mem_map_params_t params
+        cdef ucp_mem_h memh 
+
+        params.field_mask = UCP_MEM_MAP_PARAM_FIELD_LENGTH | UCP_MEM_MAP_PARAM_FIELD_FLAGS
+        params.length = size
+        params.flags = UCP_MEM_MAP_NONBLOCK | UCP_MEM_MAP_ALLOCATE
+
+        status = ucp_mem_map(self.context, &params, &memh)
+        assert_ucs_status(status)
+
+        return MemHandle(PyLong_FromVoidPtr(<void*>memh))
+
+    def mem_map(self, buf):
+        cdef ucs_status_t status
+        cdef ucp_mem_map_params_t params
+        cdef ucp_mem_h memh
+
+        buff_view = memoryview(buf)
+        if not buff_view.contiguous:
+            raise UCXError("Can only map contiguous buffers")
+
+        buff_view = buff_view.cast('B', [buff_view.nbytes])
+        cdef char[:] buff_start = buff_view
+
+        params.field_mask = UCP_MEM_MAP_PARAM_FIELD_LENGTH | \
+                            UCP_MEM_MAP_PARAM_FIELD_FLAGS | \
+                            UCP_MEM_MAP_PARAM_FIELD_ADDRESS
+
+        params.flags = UCP_MEM_MAP_NONBLOCK | UCP_MEM_MAP_FIXED | UCP_MEM_MAP_ALLOCATE
+        params.address = <void *>&buff_start[0]
+        params.length = buff_view.nbytes
+
+        status = ucp_mem_map(self.context, &params, &memh)
+        assert_ucs_status(status)
+
+        return MemHandle(PyLong_FromVoidPtr(<void*>memh))
 
 class Endpoint:
     """An endpoint represents a connection to a peer
@@ -469,3 +507,25 @@ class Endpoint:
     def cuda_support(self):
         """Return whether UCX is configured with CUDA support or not"""
         return self._cuda_support
+
+cdef class MemHandle:
+    """A MemHandle represents the underlaying memory registration handle needed for RMA
+       operations. 
+
+       Please use ucp_mem_map() or ucp_mem_alloc() to create a handle"""
+
+    cdef ucp_mem_h memh
+    cdef void *base
+    cdef size_t len
+
+    def __init__(self, memh):
+        cdef ucs_status_t status
+        cdef ucp_mem_attr_t attr
+
+        self.memh = <ucp_mem_h>PyLong_AsVoidPtr(memh)
+        attr.field_mask = UCP_MEM_ATTR_FIELD_ADDRESS | UCP_MEM_ATTR_FIELD_LENGTH
+        status = ucp_mem_query(self.memh, &attr)
+        assert_ucs_status(status)
+        self.base = attr.address
+        self.len = attr.length
+        print("base: 0x{:02X} len: {}".format(<long>self.base, self.len))

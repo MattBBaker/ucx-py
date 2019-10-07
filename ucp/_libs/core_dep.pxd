@@ -1,4 +1,5 @@
 # Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
+# Copyright (C) UT-Battelle, LLC. 2019. ALL RIGHTS RESERVED.
 # See file LICENSE for terms.
 # cython: language_level=3
 
@@ -167,6 +168,42 @@ cdef extern from "ucp/api/ucp.h":
                           FILE *stream,
                           const char *title,
                           ucs_config_print_flags_t print_flags)
+
+
+
+    cdef enum:
+        UCP_MEM_MAP_NONBLOCK = 1 << 0
+        UCP_MEM_MAP_ALLOCATE = 1 << 1
+        UCP_MEM_MAP_FIXED    = 1 << 2
+
+    cdef enum ucp_mem_map_params_field:
+        UCP_MEM_MAP_PARAM_FIELD_ADDRESS = 1 << 0
+        UCP_MEM_MAP_PARAM_FIELD_LENGTH  = 1 << 1
+        UCP_MEM_MAP_PARAM_FIELD_FLAGS   = 1 << 2
+
+    ctypedef struct ucp_mem_h:
+        pass
+
+    ctypedef struct ucp_mem_map_params_t:
+        uint64_t  field_mask
+        void     *address
+        size_t    length
+        unsigned  flags
+
+    ctypedef struct ucp_mem_attr_t:
+        uint64_t  field_mask
+        void     *address
+        size_t    length
+
+    cdef enum ucp_mem_attr_field:
+        UCP_MEM_ATTR_FIELD_ADDRESS = 1 << 0
+        UCP_MEM_ATTR_FIELD_LENGTH  = 1 << 1
+
+    ucs_status_t ucp_mem_query(const ucp_mem_h memh, ucp_mem_attr_t *attr)
+    ucs_status_t ucp_mem_map(ucp_context_h context, const ucp_mem_map_params_t *params,
+                             ucp_mem_h *memh_p);
+
+
 
 cdef extern from "sys/epoll.h":
 

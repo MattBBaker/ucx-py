@@ -91,6 +91,38 @@ def get_config():
     """Returns the configuraion as a dict"""
     return _get_ctx().get_config()
 
+def mem_alloc(size):
+    """
+    Get a new memmory allocation and registere it to the ucp 
+    context. This is needed for use with RMA operations.
+
+    Parameters
+    ----------
+    size: int
+        Minimum size required. 
+
+    Returns
+    -------
+    MemHandle
+        The new memory handle
+    """
+    return _get_ctx().mem_alloc(size)
+
+def mem_map(buf):
+    """
+    Register existing allocation to the ucp context for use with RMA operations.
+
+    Parameters
+    ----------
+    buf: Contiguous allocation compatible with PEP 3118 buffer protocol
+        Object with memory to be registered. The buffer must be page aligned.
+
+    Returns
+    -------
+    MemHandle
+        The new memory handle
+    """
+    return _get_ctx().mem_map(buf)
 
 def reset():
     """
