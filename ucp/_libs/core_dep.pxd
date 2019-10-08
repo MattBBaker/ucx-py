@@ -33,9 +33,10 @@ cdef extern from "src/c_util.h":
                                        void *callback_args)
     void c_util_get_ucp_listener_params_free(ucp_listener_params_t *param)
 
-    int c_util_get_ucp_ep_params(ucp_ep_params_t *param,
-                                 const char *ip_address,
-                                 uint16_t port)
+    int c_util_get_ucp_ep_params_ip(ucp_ep_params_t *param,
+                                    const char *ip_address,
+                                    uint16_t port)
+    int c_util_get_ucp_ep_params_worker(ucp_ep_params_t *param, ucp_address_t *address)
     void c_util_get_ucp_ep_params_free(ucp_ep_params_t *param)
 
 

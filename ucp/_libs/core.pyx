@@ -244,12 +244,18 @@ cdef class ApplicationContext:
         ret._closed = False  # The Listener was successfully created
         return ret
 
-    async def create_endpoint(self, str ip_address, port):
+    async def create_endpoint(self, args):
         self._bind_epoll_fd_to_event_loop()
 
         cdef ucp_ep_params_t params
-        if c_util_get_ucp_ep_params(&params, ip_address.encode(), port):
-            raise MemoryError("Failed allocation of ucp_ep_params_t")
+        if type(args[0]) is str:
+            ip_address = args[0]
+            port = args[1]
+            if c_util_get_ucp_ep_params_ip(&params, ip_address.encode(), port):
+                raise MemoryError("Failed allocation of ucp_ep_params_t")
+        elif type(args[0]) is WorkerAddress:
+            address = args[0].get_address()
+            c_util_get_ucp_ep_params_worker(&params, <ucp_address_t*>PyLong_AsVoidPtr(address))
 
         cdef ucp_ep_h ucp_ep
         cdef ucs_status_t status = ucp_ep_create(self.worker, &params, &ucp_ep)
@@ -262,6 +268,8 @@ cdef class ApplicationContext:
         cdef uint64_t[::1] tags_mv = <uint64_t[:4:1]>(&tags[0])
         for i in range(len(tags_mv)):
             tags_mv[i] = hash(uuid.uuid4())
+        tags_mv[0] = tags_mv[1]
+        tags_mv[2] = tags_mv[3]
 
         ret = Endpoint(
             PyLong_FromVoidPtr(<void*> ucp_ep),
@@ -511,3 +519,6 @@ cdef class WorkerAddress:
     def __dealloc__(self):
         if NULL != <void *>self.address:
             ucp_worker_release_address(self.worker, self.address)
+
+    def get_address(self):
+        return PyLong_FromVoidPtr(self.address)

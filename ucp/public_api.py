@@ -48,7 +48,7 @@ def create_listener(callback_func, port=None):
     return _get_ctx().create_listener(callback_func, port)
 
 
-async def create_endpoint(ip_address, port):
+async def create_endpoint(*args):
     """
     Create a new endpoint to a server specified by `ip_address` and `port`
 
@@ -64,7 +64,7 @@ async def create_endpoint(ip_address, port):
     Endpoint
         The new endpoint
     """
-    return await _get_ctx().create_endpoint(ip_address, port)
+    return await _get_ctx().create_endpoint(args)
 
 
 def progress():

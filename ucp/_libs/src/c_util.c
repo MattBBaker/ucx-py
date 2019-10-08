@@ -41,9 +41,9 @@ void c_util_get_ucp_listener_params_free(ucp_listener_params_t *param) {
 }
 
 
-int c_util_get_ucp_ep_params(ucp_ep_params_t *param,
-                             const char *ip_address,
-                             uint16_t port) {
+int c_util_get_ucp_ep_params_ip(ucp_ep_params_t *param,
+                                const char *ip_address,
+                                uint16_t port) {
 
     struct sockaddr_in *connect_addr = malloc(sizeof(struct sockaddr_in));
     if(connect_addr == NULL) {
@@ -68,5 +68,18 @@ int c_util_get_ucp_ep_params(ucp_ep_params_t *param,
 }
 
 void c_util_get_ucp_ep_params_free(ucp_ep_params_t *param) {
-    free((void*) param->sockaddr.addr);
+    if (param->field_mask & UCP_EP_PARAM_FIELD_SOCK_ADDR) {
+        free((void*) param->sockaddr.addr);
+    }
+}
+
+int c_util_get_ucp_ep_params_worker(ucp_ep_params_t *param, ucp_address_t *address) {
+    param->field_mask         = UCP_EP_PARAM_FIELD_FLAGS |
+                                UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
+                                UCP_EP_PARAM_FIELD_ERR_HANDLER;
+    param->err_mode           = UCP_ERR_HANDLING_MODE_NONE;
+    param->err_handler.cb     = NULL;
+    param->err_handler.arg    = NULL;
+    param->address            = address;
+    return 0;
 }
