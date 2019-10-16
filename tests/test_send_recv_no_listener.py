@@ -10,21 +10,6 @@ msg_sizes = [2 ** i for i in range(0, 25, 4)]
 dtypes = ["|u1", "<i8", "f8"]
 
 
-async def echo_reply(ep):
-    """
-    Basic echo server for sized messages.
-    We expect the other endpoint to follow the pattern::
-    >>> await ep.send(msg_size, np.uint64().nbytes)  # size of the real message (in bytes)
-    >>> await ep.send(msg, msg_size)       # send the real message
-    >>> await ep.recv(responds, msg_size)  # receive the echo
-    """
-    msg_size = np.empty(1, dtype=np.uint64)
-    await ep.recv(msg_size)
-    msg = bytearray(msg_size[0])
-    await ep.recv(msg)
-    await ep.send(msg)
-
-
 def handle_exception(loop, context):
     msg = context.get("exception", context["message"])
     print(msg)

@@ -11,7 +11,7 @@ from core_dep cimport *
 from ..exceptions import UCXError, UCXCloseError, UCXCanceled, UCXWarning
 from .send_recv import tag_send, tag_recv, stream_send, stream_recv
 from .utils import get_buffer_nbytes
-
+import cython
 
 cdef assert_ucs_status(ucs_status_t status, msg_context=None):
     if status != UCS_OK:
@@ -268,6 +268,8 @@ cdef class ApplicationContext:
         cdef uint64_t[::1] tags_mv = <uint64_t[:4:1]>(&tags[0])
         for i in range(len(tags_mv)):
             tags_mv[i] = hash(uuid.uuid4())
+        tags_mv[1] = 0
+        tags_mv[3] = 1
         tags_mv[0] = tags_mv[1]
         tags_mv[2] = tags_mv[3]
 
@@ -505,6 +507,8 @@ class Endpoint:
         """Return whether UCX is configured with CUDA support or not"""
         return self._cuda_support
 
+
+@cython.auto_pickle(True)
 cdef class WorkerAddress:
     cdef ucp_worker_h worker
     cdef ucp_address_t *address
