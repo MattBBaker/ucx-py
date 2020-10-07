@@ -167,11 +167,13 @@ async def _listener_handler_coroutine(
     ep = Endpoint(
         endpoint=endpoint,
         ctx=ctx,
+        guarantee_msg_order=guarantee_msg_order,
+    )
+    ep.wireup_tags(
         msg_tag_send=peer_info["msg_tag"],
         msg_tag_recv=msg_tag,
         ctrl_tag_send=peer_info["ctrl_tag"],
-        ctrl_tag_recv=ctrl_tag,
-        guarantee_msg_order=guarantee_msg_order,
+        ctrl_tag_recv=ctrl_tag
     )
 
     logger.debug(
@@ -228,6 +230,7 @@ class ApplicationContext:
     """
 
     def __init__(self, config_dict={}, blocking_progress_mode=None):
+        self.progress_tasks = []
         self.progress_tasks = []
 
         # For now, a application context only has one worker
@@ -363,11 +366,13 @@ class ApplicationContext:
         ep = Endpoint(
             endpoint=ucx_ep,
             ctx=self,
+            guarantee_msg_order=guarantee_msg_order,
+        )
+        ep.wireup_tags(
             msg_tag_send=peer_info["msg_tag"],
             msg_tag_recv=msg_tag,
             ctrl_tag_send=peer_info["ctrl_tag"],
-            ctrl_tag_recv=ctrl_tag,
-            guarantee_msg_order=guarantee_msg_order,
+            ctrl_tag_recv=ctrl_tag
         )
 
         logger.debug(
@@ -473,18 +478,11 @@ class Endpoint:
         self,
         endpoint,
         ctx,
-        msg_tag_send,
-        msg_tag_recv,
-        ctrl_tag_send,
-        ctrl_tag_recv,
         guarantee_msg_order,
     ):
         self._ep = endpoint
         self._ctx = ctx
-        self._msg_tag_send = msg_tag_send
-        self._msg_tag_recv = msg_tag_recv
-        self._ctrl_tag_send = ctrl_tag_send
-        self._ctrl_tag_recv = ctrl_tag_recv
+        self._use_tags = False
         self._guarantee_msg_order = guarantee_msg_order
         self._send_count = 0  # Number of calls to self.send()
         self._recv_count = 0  # Number of calls to self.recv()
@@ -494,6 +492,13 @@ class Endpoint:
         tls = ctx.get_config()["TLS"]
         self._cuda_support = "cuda" in tls or tls == "all"
         self._close_after_n_recv = None
+
+    def wireup_tags(self, msg_tag_send, msg_tag_recv, ctrl_tag_send, ctrl_tag_recv):
+        self._use_tags = True
+        self._msg_tag_send = msg_tag_send
+        self._msg_tag_recv = msg_tag_recv
+        self._ctrl_tag_send = ctrl_tag_send
+        self._ctrl_tag_recv = ctrl_tag_recv
 
     @property
     def uid(self):
@@ -531,24 +536,25 @@ class Endpoint:
                 return
             self._shutting_down_peer = True
 
-            # Send a shutdown message to the peer
-            msg = CtrlMsg.serialize(opcode=1, close_after_n_recv=self._send_count)
-            log = "[Send shutdown] ep: %s, tag: %s, close_after_n_recv: %d" % (
-                hex(self.uid),
-                hex(self._ctrl_tag_send),
-                self._send_count,
-            )
-            logger.debug(log)
-            try:
-                await comm.tag_send(
-                    self._ep, msg, len(msg), self._ctrl_tag_send, name=log,
+            if self._use_tags:
+                # Send a shutdown message to the peer
+                msg = CtrlMsg.serialize(opcode=1, close_after_n_recv=self._send_count)
+                log = "[Send shutdown] ep: %s, tag: %s, close_after_n_recv: %d" % (
+                    hex(self.uid),
+                    hex(self._ctrl_tag_send),
+                    self._send_count,
                 )
-            # The peer might already be shutting down thus we can ignore any send errors
-            except UCXError as e:
-                logging.warning(
-                    "UCX failed closing worker %s (probably already closed): %s"
-                    % (hex(self.uid), repr(e))
-                )
+                logger.debug(log)
+                try:
+                    await comm.tag_send(
+                        self._ep, msg, len(msg), self._ctrl_tag_send, name=log,
+                    )
+                # The peer might already be shutting down thus we can ignore any send errors
+                except UCXError as e:
+                    logging.warning(
+                        "UCX failed closing worker %s (probably already closed): %s"
+                        % (hex(self.uid), repr(e))
+                    )
         finally:
             if not self.closed():
                 # Give all current outstanding send() calls a chance to return
