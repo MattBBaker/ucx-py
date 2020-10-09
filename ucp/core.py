@@ -164,16 +164,12 @@ async def _listener_handler_coroutine(
         listener=True,
         port=port,
     )
-    ep = Endpoint(
-        endpoint=endpoint,
-        ctx=ctx,
-        guarantee_msg_order=guarantee_msg_order,
-    )
+    ep = Endpoint(endpoint=endpoint, ctx=ctx, guarantee_msg_order=guarantee_msg_order,)
     ep.wireup_tags(
         msg_tag_send=peer_info["msg_tag"],
         msg_tag_recv=msg_tag,
         ctrl_tag_send=peer_info["ctrl_tag"],
-        ctrl_tag_recv=ctrl_tag
+        ctrl_tag_recv=ctrl_tag,
     )
 
     logger.debug(
@@ -364,15 +360,13 @@ class ApplicationContext:
             port=port,
         )
         ep = Endpoint(
-            endpoint=ucx_ep,
-            ctx=self,
-            guarantee_msg_order=guarantee_msg_order,
+            endpoint=ucx_ep, ctx=self, guarantee_msg_order=guarantee_msg_order,
         )
         ep.wireup_tags(
             msg_tag_send=peer_info["msg_tag"],
             msg_tag_recv=msg_tag,
             ctrl_tag_send=peer_info["ctrl_tag"],
-            ctrl_tag_recv=ctrl_tag
+            ctrl_tag_recv=ctrl_tag,
         )
 
         logger.debug(
@@ -389,6 +383,42 @@ class ApplicationContext:
 
         # Setup the control receive
         CtrlMsg.setup_ctrl_recv(ep)
+        return ep
+
+    def create_endpoint_sync(
+        self, address, guarantee_msg_order=False, endpoint_error_handling=False
+    ):
+        """Create a new endpoint to a remote worker
+
+        Parameters
+        ----------
+        address: buffer
+            An object that holds a buffer to a ucp_address_t as created from
+            ucp_worker_get_address(). Usually the result from remote node's UCXAddress
+            object.
+        guarantee_msg_order: boolean, optional
+            Whether to guarantee message order or not. Remember, both peers
+            of the endpoint must set guarantee_msg_order to the same value.
+        endpoint_error_handling: boolean, optional
+            Enable endpoint error handling raising exceptions when an error
+            occurs, may incur in performance penalties but prevents a process
+            from terminating unexpectedly that may happen when disabled.
+
+        Returns
+        -------
+        Endpoint
+            The new endpoint
+        """
+        self.continuous_ucx_progress()
+        ucx_ep = self.worker.ep_create_from_address(address, endpoint_error_handling)
+
+        # Since this Ep doesn't have a remote pair so there are no tags to wire up
+        ep = Endpoint(
+            endpoint=ucx_ep, ctx=self, guarantee_msg_order=guarantee_msg_order,
+        )
+
+        logger.debug("create_endpoint() client: %s" % (hex(ep._ep.handle)))
+
         return ep
 
     def continuous_ucx_progress(self, event_loop=None):
@@ -475,10 +505,7 @@ class Endpoint:
     """
 
     def __init__(
-        self,
-        endpoint,
-        ctx,
-        guarantee_msg_order,
+        self, endpoint, ctx, guarantee_msg_order,
     ):
         self._ep = endpoint
         self._ctx = ctx
@@ -549,7 +576,7 @@ class Endpoint:
                     await comm.tag_send(
                         self._ep, msg, len(msg), self._ctrl_tag_send, name=log,
                     )
-                # The peer might already be shutting down thus we can ignore any send errors
+                # The peer might already be shutting down, we can ignore any send errors
                 except UCXError as e:
                     logging.warning(
                         "UCX failed closing worker %s (probably already closed): %s"
@@ -908,6 +935,10 @@ def fence():
     """
     if _ctx is not None:
         _get_ctx().fence()
+
+
+def create_one_sided_ep(address):
+    return _get_ctx().create_endpoint_sync(address)
 
 
 # Setting the __doc__

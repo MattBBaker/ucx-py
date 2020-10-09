@@ -369,6 +369,30 @@ cdef class UCXWorker(UCXObject):
         assert_ucs_status(status)
         return UCXEndpoint(self, <uintptr_t>ucp_ep)
 
+    def ep_create_from_address(self, address, endpoint_error_handling):
+        assert self.initialized
+        cdef ucp_ep_params_t params
+
+        cdef ucp_err_handler_cb_t err_cb = (
+            _get_error_callback(self._context._config["TLS"], endpoint_error_handling)
+        )
+
+        params.field_mask = (UCP_EP_PARAM_FIELD_REMOTE_ADDRESS |
+                             UCP_EP_PARAM_FIELD_ERR_HANDLING_MODE |
+                             UCP_EP_PARAM_FIELD_ERR_HANDLER)
+        params.err_handler.cb = err_cb
+        params.err_handler.arg = NULL
+        if err_cb == <ucp_err_handler_cb_t>NULL:
+            params.err_mode = UCP_ERR_HANDLING_MODE_NONE
+        else:
+            params.err_mode = UCP_ERR_HANDLING_MODE_PEER
+        params.address = <ucp_address_t*>get_buffer_data(address, check_writable=False)
+
+        cdef ucp_ep_h ucp_ep
+        cdef ucs_status_t status = ucp_ep_create(self._handle, &params, &ucp_ep)
+        assert_ucs_status(status)
+        return UCXEndpoint(self, <uintptr_t>ucp_ep)
+
     def ep_create_from_conn_request(
         self, uintptr_t conn_request, endpoint_error_handling
     ):
