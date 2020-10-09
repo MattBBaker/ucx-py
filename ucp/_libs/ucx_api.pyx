@@ -238,6 +238,110 @@ cdef class UCXContext(UCXObject):
         assert self.initialized
         return int(<uintptr_t>self._handle)
 
+    def mem_map(self, mem, alloc=False, fixed=False):
+        return UCXMemoryHandle(self, mem, alloc, fixed)
+
+
+# I'm not sure the machinery here is actually needed, since we don't pass the memh to this
+def _ucx_packed_rkey_finalizer(uintptr_t handle_as_int):
+    cdef void *handle = <void*><uintptr_t>handle_as_int
+    cdef ucs_status_t status
+    ucp_rkey_buffer_release(handle)
+
+
+cdef class PackedRemoteKey(UCXObject):
+    cdef void *_key
+    cdef size_t _length
+    __array_interface__ = dict()
+    def __init__(self, UCXMemoryHandle mem):
+        cdef ucs_status_t status
+        status = ucp_rkey_pack(mem._context._handle, mem._memh, &self._key, &self._length)
+        assert_ucs_status(status)
+        self.__array_interface__["data"] = (<uintptr_t>self._key, True)
+        self.__array_interface__["typestr"] = "|V1"
+        self.__array_interface__["shape"] = [self._length]
+        self.__array_interface__["version"] = 3
+        self.add_handle_finalizer(
+            _ucx_packed_rkey_finalizer,
+            int(<uintptr_t>self._key)
+        )
+        mem.add_child(self)
+
+    @property
+    def key(self):
+        return int(<uintptr_t><void*>self._key)
+
+    @property
+    def length(self):
+        return int(self._length)
+
+    #TODO: Buffer interface. Presently relies on upper level exposing an array_interface
+
+def _ucx_mem_handle_finalizer(uintptr_t handle_as_int, UCXContext ctx):
+    assert ctx.initialized
+    cdef ucp_mem_h handle = <ucp_mem_h>handle_as_int
+    cdef ucs_status_t status
+    status = ucp_mem_unmap(ctx._handle, handle)
+    assert_ucs_status(status)
+
+
+cdef class UCXMemoryHandle(UCXObject):
+    cdef ucp_mem_h _memh
+    cdef UCXContext _context
+    cdef uint64_t r_address
+    cdef size_t _length
+
+    def __init__(self, ctx, mem, alloc, fixed):
+        cdef ucp_mem_map_params_t params
+        cdef ucp_mem_h memh
+        cdef ucs_status_t status
+        cdef ucp_context_h ucx_ctx
+
+        if not alloc:
+            params.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH
+            params.address = <void*><uintptr_t>get_buffer_data(mem, check_writable=False)
+            params.length = <size_t>get_buffer_nbytes(mem, 0, False)
+        else:
+            params.field_mask = UCP_MEM_MAP_PARAM_FIELD_FLAGS | UCP_MEM_MAP_PARAM_FIELD_LENGTH
+            params.length = <size_t>mem
+            params.flags = UCP_MEM_MAP_NONBLOCK | UCP_MEM_MAP_ALLOCATE
+        self._context = ctx
+        ucx_ctx = <ucp_context_h><uintptr_t>ctx.handle
+        status = ucp_mem_map(ucx_ctx, &params, &self._memh)
+        assert_ucs_status(status)
+        self._populate_metadata()
+        self.add_handle_finalizer(
+            _ucx_mem_handle_finalizer,
+            int(<uintptr_t>self.memh),
+            self._context
+        )
+        ctx.add_child(self)
+
+    def pack_rkey(self):
+        return PackedRemoteKey(self)
+
+    @property
+    def memh(self):
+        return <uintptr_t>self._memh
+
+    #Done as a separate function because some day I plan on making this loaded lazily
+    #Should also note that I believe this reports the actual registered space, rather than what was requested.
+    def _populate_metadata(self):
+        cdef ucs_status_t status
+        cdef ucp_mem_attr_t attr
+
+        attr.field_mask = UCP_MEM_ATTR_FIELD_ADDRESS | UCP_MEM_ATTR_FIELD_LENGTH
+        status = ucp_mem_query(self._memh, &attr)
+        assert_ucs_status(status)
+        self.r_address = <uintptr_t>attr.address
+        self._length = attr.length
+
+    def address(self):
+        return self.r_address
+
+    def length(self):
+        return self._length
+
 
 cdef void _ib_err_cb(void *arg, ucp_ep_h ep, ucs_status_t status):
     status_str = ucs_status_string(status).decode("utf-8")
@@ -1136,3 +1240,88 @@ def stream_recv_nb(
     return _handle_status(
         status, nbytes, cb_func, cb_args, cb_kwargs, name, ep._inflight_msgs
     )
+
+
+def _ucx_rkey_finalizer(uintptr_t handle_as_int):
+    cdef ucp_rkey_h rkey = <ucp_rkey_h>handle_as_int
+    ucp_rkey_destroy(rkey)
+
+
+cdef class UCXRkey(UCXObject):
+    cdef ucp_rkey_h _handle
+    cdef UCXEndpoint ep
+
+    def __init__(self, UCXEndpoint ep, rkey):
+        cdef ucs_status_t status
+        cdef const void *key_data = <const void *><const uintptr_t>get_buffer_data(rkey)
+        status = ucp_ep_rkey_unpack(ep._handle, key_data, &self._handle)
+        assert_ucs_status(status)
+        self.ep = ep
+        self.add_handle_finalizer(
+            _ucx_rkey_finalizer,
+            int(<uintptr_t>self._handle)
+        )
+        ep.add_child(self)
+
+
+cdef empty_send_cb(void *request, ucs_status_t status):
+    req = UCXRequest(<uintptr_t><void*> request)
+    req.close()
+
+def put_nbi(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef void *data = <void*><uintptr_t>(get_buffer_data(buffer,
+                                         check_writable=False))
+    cdef ucs_status_t status = ucp_put_nbi(rkey.ep._handle,
+                                           data,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle)
+    assert_ucs_status(status)
+    return status
+
+def get_nbi(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef void *data = <void*><uintptr_t>(get_buffer_data(buffer,
+                                         check_writable=True))
+    cdef ucs_status_t status = ucp_get_nbi(rkey.ep._handle,
+                                           data,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle)
+    assert_ucs_status(status)
+    return status
+
+#TODO: The *_nb functions can take a cb function. Need to integrate this.
+def put_nb(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef ucs_status_t ucx_status
+    cdef void *data = <void*><uintptr_t>(get_buffer_data(buffer,
+                                         check_writable=False))
+    cdef ucp_send_callback_t send_cb = <ucp_send_callback_t>empty_send_cb
+    cdef ucs_status_ptr_t status = ucp_put_nb(rkey.ep._handle,
+                                           data,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle,
+                                           send_cb)
+    if not UCS_PTR_IS_PTR(status):
+        ucx_status = UCS_PTR_STATUS(status)
+        assert_ucs_status(ucx_status)
+        return ucx_status
+    return UCXRequest(<uintptr_t>status)
+
+def get_nb(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef ucs_status_t ucx_status
+    cdef void *data = <void*><uintptr_t>(get_buffer_data(buffer,
+                                         check_writable=True))
+    cdef ucp_send_callback_t send_cb = <ucp_send_callback_t>empty_send_cb
+    cdef ucs_status_ptr_t status = ucp_get_nb(rkey.ep._handle,
+                                           data,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle,
+                                           send_cb)
+
+    if not UCS_PTR_IS_PTR(status):
+        ucx_status = UCS_PTR_STATUS(status)
+        assert_ucs_status(ucx_status)
+        return ucx_status
+    return UCXRequest(<uintptr_t>status)
