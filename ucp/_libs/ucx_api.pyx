@@ -266,6 +266,10 @@ cdef class UCXContext(UCXObject):
         assert self.initialized
         return int(<uintptr_t>self._handle)
 
+    def mem_map(self, Array mem, size, alloc, fixed):
+        assert self.initialized
+        return UCXMemoryHandle(self, mem, size, alloc, fixed)
+
 
 # I'm not sure the machinery here is actually needed, since we don't pass the memh to this
 def _ucx_packed_rkey_finalizer(uintptr_t handle_as_int):
@@ -276,16 +280,14 @@ def _ucx_packed_rkey_finalizer(uintptr_t handle_as_int):
 
 cdef class PackedRemoteKey(UCXObject):
     cdef void *_key
-    cdef size_t _length
+    cdef Py_ssize_t _length
     __array_interface__ = dict()
     def __init__(self, UCXMemoryHandle mem):
         cdef ucs_status_t status
-        status = ucp_rkey_pack(mem._context._handle, mem._memh, &self._key, &self._length)
+        cdef size_t length
+        status = ucp_rkey_pack(mem._context._handle, mem._memh, &self._key, &length)
         assert_ucs_status(status)
-        self.__array_interface__["data"] = (<uintptr_t>self._key, True)
-        self.__array_interface__["typestr"] = "|V1"
-        self.__array_interface__["shape"] = [self._length]
-        self.__array_interface__["version"] = 3
+        self._length = <Py_ssize_t>length
         self.add_handle_finalizer(
             _ucx_packed_rkey_finalizer,
             int(<uintptr_t>self._key)
@@ -300,7 +302,31 @@ cdef class PackedRemoteKey(UCXObject):
     def length(self):
         return int(self._length)
 
-    #TODO: Buffer interface. Presently relies on upper level exposing an array_interface
+    def __getbuffer__(self, Py_buffer *buffer, int flags):
+        assert self.initialized
+        if (flags & PyBUF_WRITABLE) == PyBUF_WRITABLE:
+            raise BufferError("Requested writable view on readonly data")
+        buffer.buf = <void*>self._key
+        buffer.obj = self
+        buffer.len = self._length
+        buffer.readonly = True
+        buffer.itemsize = 1
+        if (flags & PyBUF_FORMAT) == PyBUF_FORMAT:
+            buffer.format = b"B"
+        else:
+            buffer.format = NULL
+        buffer.ndim = 1
+        if (flags & PyBUF_ND) == PyBUF_ND:
+            buffer.shape = &self._length
+        else:
+            buffer.shape = NULL
+        buffer.strides = NULL
+        buffer.suboffsets = NULL
+        buffer.internal = NULL
+
+    def __releasebuffer__(self, Py_buffer *buffer):
+        pass
+
 
 def _ucx_mem_handle_finalizer(uintptr_t handle_as_int, UCXContext ctx):
     assert ctx.initialized
@@ -316,9 +342,8 @@ cdef class UCXMemoryHandle(UCXObject):
     cdef uint64_t r_address
     cdef size_t _length
 
-    def __init__(self, ctx, Array mem, alloc, fixed):
+    def __init__(self, ctx, Array mem, size, alloc, fixed):
         cdef ucp_mem_map_params_t params
-        cdef ucp_mem_h memh
         cdef ucs_status_t status
         cdef ucp_context_h ucx_ctx
 
@@ -328,7 +353,7 @@ cdef class UCXMemoryHandle(UCXObject):
             params.length = mem._nbytes()
         else:
             params.field_mask = UCP_MEM_MAP_PARAM_FIELD_FLAGS | UCP_MEM_MAP_PARAM_FIELD_LENGTH
-            params.length = <size_t>mem
+            params.length = <size_t>size
             params.flags = UCP_MEM_MAP_NONBLOCK | UCP_MEM_MAP_ALLOCATE
         self._context = ctx
         ucx_ctx = <ucp_context_h><uintptr_t>ctx.handle
@@ -337,7 +362,7 @@ cdef class UCXMemoryHandle(UCXObject):
         self._populate_metadata()
         self.add_handle_finalizer(
             _ucx_mem_handle_finalizer,
-            int(<uintptr_t>memh),
+            int(<uintptr_t>self._memh),
             self._context
         )
         ctx.add_child(self)
@@ -668,6 +693,29 @@ def _ucx_endpoint_finalizer(uintptr_t handle_as_int, worker, set inflight_msgs):
         raise UCXError("Error while closing endpoint: %s" % msg)
 
 
+
+def _ucx_rkey_finalizer(uintptr_t handle_as_int):
+    cdef ucp_rkey_h rkey = <ucp_rkey_h>handle_as_int
+    ucp_rkey_destroy(rkey)
+
+
+cdef class UCXRkey(UCXObject):
+    cdef ucp_rkey_h _handle
+    cdef UCXEndpoint ep
+
+    def __init__(self, UCXEndpoint ep, Array rkey):
+        cdef ucs_status_t status
+        cdef const void *key_data = <const void *>rkey.ptr
+        status = ucp_ep_rkey_unpack(ep._handle, key_data, &self._handle)
+        assert_ucs_status(status)
+        self.ep = ep
+        self.add_handle_finalizer(
+            _ucx_rkey_finalizer,
+            int(<uintptr_t>self._handle)
+        )
+        ep.add_child(self)
+
+
 cdef class UCXEndpoint(UCXObject):
     """Python representation of `ucp_ep_h`"""
     cdef:
@@ -733,6 +781,9 @@ cdef class UCXEndpoint(UCXObject):
         return _handle_status(
             status, 0, cb_func, cb_args, cb_kwargs, 'flush', self._inflight_msgs
         )
+
+    def unpack_rkey(self, Array rkey):
+        return UCXRkey(self, rkey)
 
 
 cdef void _listener_callback(ucp_conn_request_h conn_request, void *args):

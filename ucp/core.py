@@ -475,8 +475,11 @@ class ApplicationContext:
     def get_worker_address(self):
         return self.worker.get_address()
 
-    def mem_map(self, mem, alloc=False, fixed=False):
-        return self.context.mem_map(mem, alloc, fixed)
+    def map(self, mem, fixed=False):
+        return self.context.mem_map(mem=Array(mem), size=0, alloc=False, fixed=fixed)
+
+    def alloc(self, size):
+        return self.context.mem_map(mem=None, size=size, alloc=True, fixed=False)
 
 
 class Listener:
@@ -784,7 +787,7 @@ class Endpoint:
         """Unpack an rkey on this Endpoint. Returns a RemoteMem object that can
            be use for RMA/AMO operations
         """
-        _rkey = ucx_api.unpack_rkey(self._ep, rkey)
+        _rkey = self._ep.unpack_rkey(Array(rkey))
         return RemoteMemory(_rkey, self)
 
 
@@ -949,8 +952,7 @@ def create_one_sided_ep(address):
     return _get_ctx().create_endpoint_sync(address)
 
 
-@singledispatch
-def mem_map(memory):
+def map(memory):
     """Map memory and register memory for use in RMA and AMO operations on this context.
        This function may either recieve an object with backing memory and register that,
        or it may allocate memory and return a new handle. After this remote hardware may
@@ -961,11 +963,11 @@ def mem_map(memory):
         If memory is an int, then a region of memory will be allocated and registered at a minimum of that size.
         If memory is a buffer, then the memory region containing that buffer object will be registered
     """
-    return _get_ctx().mem_map(memory, alloc=False)
+    return _get_ctx().map(memory)
 
-@mem_map.register
-def _(memory: int):
-    return _get_ctx().mem_map(memory, alloc=True)
+
+def alloc(size):
+    return _get_ctx().alloc(size)
 
 class MemoryHandle:
     """This class represents a memory handle registered to UCX. This memory is registered
