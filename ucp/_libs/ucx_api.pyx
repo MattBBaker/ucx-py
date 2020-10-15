@@ -1465,7 +1465,7 @@ def put_nbi(Array buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
     assert_ucs_status(status)
     return status
 
-def get_nbi(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+def get_nbi(Array buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
     cdef ucs_status_t status = ucp_get_nbi(rkey.ep._handle,
                                            <void*>buffer.ptr,
                                            nbytes,
@@ -1475,7 +1475,7 @@ def get_nbi(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
     return status
 
 #TODO: The *_nb functions can take a cb function. Need to integrate this.
-def put_nb(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+def put_nb(Array buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
     cdef ucs_status_t ucx_status
     cdef ucp_send_callback_t send_cb = <ucp_send_callback_t>empty_send_cb
     cdef ucs_status_ptr_t status = ucp_put_nb(rkey.ep._handle,
@@ -1490,7 +1490,7 @@ def put_nb(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
         return ucx_status
     return UCXRequest(<uintptr_t>status)
 
-def get_nb(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+def get_nb(Array buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
     cdef ucs_status_t ucx_status
     cdef ucp_send_callback_t send_cb = <ucp_send_callback_t>empty_send_cb
     cdef ucs_status_ptr_t status = ucp_get_nb(rkey.ep._handle,

@@ -1028,7 +1028,7 @@ class RemoteMemory:
         if dest is None:
             dest = self._base
         if size is None:
-            size = memory.ptr
+            size = memory.nbytes
         return ucx_api.put_nb(memory, size, dest, self._rkey)
 
     def get_nb(self, memory, size=None, dest=None):
@@ -1047,7 +1047,7 @@ class RemoteMemory:
         if dest is None:
             dest = self._base
         if size is None:
-            size = memory.ptr
+            size = memory.nbytes
         return ucx_api.get_nb(memory, size, dest, self._rkey)
 
     def put_nbi(self, memory, size=None, dest=None):
@@ -1068,7 +1068,7 @@ class RemoteMemory:
         if dest is None:
             dest = self._base
         if size is None:
-            size = memory.ptr
+            size = memory.nbytes
         return ucx_api.put_nbi(memory, size, dest, self._rkey)
 
     def get_nbi(self, memory, size=None, dest=None):
@@ -1089,7 +1089,7 @@ class RemoteMemory:
         if dest is None:
             dest = self._base
         if size is None:
-            size = memory.ptr
+            size = memory.nbytes
         return ucx_api.get_nbi(memory, size, dest, self._rkey)
 
 
@@ -1121,7 +1121,7 @@ class UcxIO(RawIOBase):
         return size
 
     def flush(self):
-        req = flush()
+        req = self.ep.flush()
         self.block_on_request(req)
 
     def seek(self, pos, whence=0):
