@@ -350,6 +350,7 @@ cdef class UCXMemoryHandle(UCXObject):
         if not alloc:
             params.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH
             params.address = <void*>mem.ptr
+            print("preparing to map address: ", mem.ptr)
             params.length = mem._nbytes()
         else:
             params.field_mask = UCP_MEM_MAP_PARAM_FIELD_FLAGS | UCP_MEM_MAP_PARAM_FIELD_LENGTH
@@ -1449,3 +1450,58 @@ def stream_recv_nb(
     return _handle_status(
         status, nbytes, cb_func, cb_args, cb_kwargs, name, ep._inflight_msgs
     )
+
+
+cdef empty_send_cb(void *request, ucs_status_t status):
+    req = UCXRequest(<uintptr_t><void*> request)
+    req.close()
+
+def put_nbi(Array buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef ucs_status_t status = ucp_put_nbi(rkey.ep._handle,
+                                           <void*>buffer.ptr,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle)
+    assert_ucs_status(status)
+    return status
+
+def get_nbi(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef ucs_status_t status = ucp_get_nbi(rkey.ep._handle,
+                                           <void*>buffer.ptr,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle)
+    assert_ucs_status(status)
+    return status
+
+#TODO: The *_nb functions can take a cb function. Need to integrate this.
+def put_nb(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef ucs_status_t ucx_status
+    cdef ucp_send_callback_t send_cb = <ucp_send_callback_t>empty_send_cb
+    cdef ucs_status_ptr_t status = ucp_put_nb(rkey.ep._handle,
+                                           <void*>buffer.ptr,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle,
+                                           send_cb)
+    if not UCS_PTR_IS_PTR(status):
+        ucx_status = UCS_PTR_STATUS(status)
+        assert_ucs_status(ucx_status)
+        return ucx_status
+    return UCXRequest(<uintptr_t>status)
+
+def get_nb(buffer, size_t nbytes, uint64_t remote_addr, UCXRkey rkey):
+    cdef ucs_status_t ucx_status
+    cdef ucp_send_callback_t send_cb = <ucp_send_callback_t>empty_send_cb
+    cdef ucs_status_ptr_t status = ucp_get_nb(rkey.ep._handle,
+                                           <void*>buffer.ptr,
+                                           nbytes,
+                                           remote_addr,
+                                           rkey._handle,
+                                           send_cb)
+
+    if not UCS_PTR_IS_PTR(status):
+        ucx_status = UCS_PTR_STATUS(status)
+        assert_ucs_status(ucx_status)
+        return ucx_status
+    return UCXRequest(<uintptr_t>status)

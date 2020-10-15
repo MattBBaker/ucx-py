@@ -1023,10 +1023,12 @@ class RemoteMemory:
         UCXRequest
             request object that holds metadata about the underlaying driver's progress
         """
+        if not isinstance(memory, Array):
+            memory = Array(memory)
         if dest is None:
             dest = self._base
         if size is None:
-            size = get_buffer_nbytes(memory, None, self.ep.cuda_support())
+            size = memory.ptr
         return ucx_api.put_nb(memory, size, dest, self._rkey)
 
     def get_nb(self, memory, size=None, dest=None):
@@ -1040,10 +1042,12 @@ class RemoteMemory:
         UCXRequest
             request object that holds metadata about the underlaying driver's progress
         """
+        if not isinstance(memory, Array):
+            memory = Array(memory)
         if dest is None:
             dest = self._base
         if size is None:
-            size = get_buffer_nbytes(memory, None, self.ep.cuda_support())
+            size = memory.ptr
         return ucx_api.get_nb(memory, size, dest, self._rkey)
 
     def put_nbi(self, memory, size=None, dest=None):
@@ -1059,10 +1063,12 @@ class RemoteMemory:
         UCS_INPROGRESS
             Buffer is in use by the underlying driver and not safe for reuse until the worker is flushed
         """
+        if not isinstance(memory, Array):
+            memory = Array(memory)
         if dest is None:
             dest = self._base
         if size is None:
-            size = get_buffer_nbytes(memory, None, self.ep.cuda_support())
+            size = memory.ptr
         return ucx_api.put_nbi(memory, size, dest, self._rkey)
 
     def get_nbi(self, memory, size=None, dest=None):
@@ -1078,10 +1084,12 @@ class RemoteMemory:
         UCS_INPROGRESS
             Buffer is in use by the underlying driver and not safe for use until the worker is flushed
         """
+        if not isinstance(memory, Array):
+            memory = Array(memory)
         if dest is None:
-            dest = 0
+            dest = self._base
         if size is None:
-            size = get_buffer_nbytes(memory, None, self.ep.cuda_support())
+            size = memory.ptr
         return ucx_api.get_nbi(memory, size, dest, self._rkey)
 
 
