@@ -476,10 +476,10 @@ class ApplicationContext:
         return self.worker.get_address()
 
     def map(self, mem, fixed=False):
-        return self.context.mem_map(mem=Array(mem), size=0, alloc=False, fixed=fixed)
+        return self.context.mem_map(mem=Array(mem), size=0, alloc=False, fixed=fixed, mem_type=None)
 
-    def alloc(self, size):
-        return self.context.mem_map(mem=None, size=size, alloc=True, fixed=False)
+    def alloc(self, size, mem_type=None):
+        return self.context.mem_map(mem=None, size=size, alloc=True, fixed=False, mem_type=mem_type)
 
 
 class Listener:

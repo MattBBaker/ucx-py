@@ -289,11 +289,23 @@ cdef extern from "ucp/api/ucp.h":
     int UCP_MEM_ATTR_FIELD_ADDRESS
     int UCP_MEM_ATTR_FIELD_LENGTH
 
+
+    ctypedef enum ucs_memory_type_t:
+        UCS_MEMORY_TYPE_HOST,
+        UCS_MEMORY_TYPE_CUDA,
+        UCS_MEMORY_TYPE_CUDA_MANAGED,
+        UCS_MEMORY_TYPE_ROCM,
+        UCS_MEMORY_TYPE_ROCM_MANAGED,
+        UCS_MEMORY_TYPE_LAST,
+        UCS_MEMORY_TYPE_UNKNOWN = UCS_MEMORY_TYPE_LAST
+
     ctypedef struct ucp_mem_map_params_t:
         uint64_t field_mask
         void    *address
         size_t   length
         unsigned flags
+        unsigned prot
+        ucs_memory_type_t memory_type
 
     ucs_status_t ucp_mem_map(ucp_context_h context, const ucp_mem_map_params_t *params,
                              ucp_mem_h *memh_p)
@@ -317,6 +329,46 @@ cdef extern from "ucp/api/ucp.h":
     ucs_status_ptr_t ucp_get_nb(ucp_ep_h ep, void *buffer, size_t length,
                                 uint64_t remote_addr, ucp_rkey_h rkey,
                                 ucp_send_callback_t cb)
+
+
+    ctypedef void (*ucp_am_recv_data_nbx_callback_t)(void *request,
+                                                ucs_status_t status,
+                                                size_t length, void *user_data)
+
+    ctypedef void (*ucp_tag_recv_nbx_callback_t)(void *request, ucs_status_t status,
+                                            const ucp_tag_recv_info_t *tag_info,
+                                            void *user_data)
+
+    ctypedef void (*ucp_stream_recv_nbx_callback_t)(void *request, ucs_status_t status,
+                                               size_t length, void *user_data)
+
+
+    ctypedef void (*ucp_send_nbx_callback_t)(void *request, ucs_status_t status,
+                                        void *user_data)
+
+    ctypedef union param_union_t:
+        ucp_send_nbx_callback_t         send;
+        ucp_tag_recv_nbx_callback_t     recv;
+        ucp_stream_recv_nbx_callback_t  recv_stream;
+        ucp_am_recv_data_nbx_callback_t recv_am;
+
+    ctypedef struct ucp_request_param_t:
+        uint32_t       op_attr_mask;
+        uint32_t       flags;
+        void          *request;
+        param_union_t  cb;
+        ucp_datatype_t datatype;
+        void          *user_data;
+        void          *reply_buffer;
+        ucs_memory_type_t memory_type;
+
+    ucs_status_ptr_t ucp_put_nbx(ucp_ep_h ep, const void *buffer, size_t count,
+                             uint64_t remote_addr, ucp_rkey_h rkey,
+                             const ucp_request_param_t *param)
+
+    ucs_status_ptr_t ucp_get_nbx(ucp_ep_h ep, void *buffer, size_t count,
+                             uint64_t remote_addr, ucp_rkey_h rkey,
+                             const ucp_request_param_t *param)
 
 cdef extern from "sys/epoll.h":
 

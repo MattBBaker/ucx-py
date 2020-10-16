@@ -266,9 +266,9 @@ cdef class UCXContext(UCXObject):
         assert self.initialized
         return int(<uintptr_t>self._handle)
 
-    def mem_map(self, Array mem, size, alloc, fixed):
+    def mem_map(self, Array mem, size, alloc, fixed, mem_type):
         assert self.initialized
-        return UCXMemoryHandle(self, mem, size, alloc, fixed)
+        return UCXMemoryHandle(self, mem, size, alloc, fixed, mem_type)
 
 
 # I'm not sure the machinery here is actually needed, since we don't pass the memh to this
@@ -342,7 +342,7 @@ cdef class UCXMemoryHandle(UCXObject):
     cdef uint64_t r_address
     cdef size_t _length
 
-    def __init__(self, ctx, Array mem, size, alloc, fixed):
+    def __init__(self, ctx, Array mem, size, alloc, fixed, mem_type):
         cdef ucp_mem_map_params_t params
         cdef ucs_status_t status
         cdef ucp_context_h ucx_ctx
@@ -351,11 +351,19 @@ cdef class UCXMemoryHandle(UCXObject):
             params.field_mask = UCP_MEM_MAP_PARAM_FIELD_ADDRESS | UCP_MEM_MAP_PARAM_FIELD_LENGTH
             params.address = <void*>mem.ptr
             print("preparing to map address: ", mem.ptr)
-            params.length = mem._nbytes()
+            params.length = mem.nbytes()
+            if mem.cuda:
+                pass
+            else:
+                pass
         else:
             params.field_mask = UCP_MEM_MAP_PARAM_FIELD_FLAGS | UCP_MEM_MAP_PARAM_FIELD_LENGTH
             params.length = <size_t>size
             params.flags = UCP_MEM_MAP_NONBLOCK | UCP_MEM_MAP_ALLOCATE
+            if mem_type == "cuda":
+                pass
+            else:
+                pass
         self._context = ctx
         ucx_ctx = <ucp_context_h><uintptr_t>ctx.handle
         status = ucp_mem_map(ucx_ctx, &params, &self._memh)
